@@ -5,11 +5,11 @@ menu "AI Voice Assistant (demo_voice)"
 
     config VOICE_WIFI_SSID
         string "Wi-Fi SSID (AP 名称, 2.4GHz)"
-        default "FoloToy-AP"
+        default "Mate 70 pro"
 
     config VOICE_WIFI_PASSWORD
         string "Wi-Fi password"
-        default ""
+        default "15062106537"
 
     config VOICE_SERVER_URL
         string "Jarvis brain /speak URL"
