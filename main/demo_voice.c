@@ -209,10 +209,14 @@ static void voice_task(void *arg) {
 }
 
 // ---------- app 接口 ----------
-void demo_voice_enter(void) {
+bool demo_voice_enter(void) {
     s_rec_cap = (size_t)CONFIG_VOICE_RECORD_SEC * SAMPLE_RATE;
     s_rec = malloc(s_rec_cap * sizeof(int16_t));
-    if (!s_rec) { ESP_LOGE(TAG, "rec buf alloc failed"); return; }
+    if (!s_rec) {
+        ESP_LOGE(TAG, "录音缓冲分配失败(%u 字节),内存不足",
+                 (unsigned)(s_rec_cap * sizeof(int16_t)));
+        return false;
+    }
 
     s_scr = ui_pixel_screen_create("VOICE AI");
     lv_obj_t *panel = ui_pixel_panel_create(s_scr, 12, 54, 216, 150, UI_PAPER);
@@ -230,6 +234,7 @@ void demo_voice_enter(void) {
     s_evq = xQueueCreate(8, sizeof(voice_ev_t));
     if (!s_task) xTaskCreate(voice_task, "demo_voice", 8192, NULL, 4, &s_task);
     lv_screen_load(s_scr);
+    return true;
 }
 
 void demo_voice_exit(void) {
