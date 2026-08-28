@@ -13,7 +13,7 @@ menu "AI Voice Assistant (demo_voice)"
 
     config VOICE_SERVER_URL
         string "Jarvis brain /speak URL"
-        default "http://192.168.1.100:8000/speak"
+        default "http://192.168.43.4:8000/speak"
         help
             jarvis-brain 服务地址。运行 `python server.py` 后，
             填成 http://<服务器IP>:8000/speak(注意末尾是 /speak)。
