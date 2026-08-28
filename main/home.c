@@ -6,7 +6,7 @@
 
 #define COUNT 2
 
-static const char *NAMES[COUNT] = { "Apps", "Voice AI" };
+static const char *NAMES[COUNT] = { "Settings", "Voice AI" };
 static const uint32_t COLORS[COUNT] = { 0x1689E8, 0xFFD928 };   // Apps 蓝, Voice 黄
 
 static lv_obj_t *s_scr;
