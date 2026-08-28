@@ -34,7 +34,7 @@ void demo_ble_key(bsp_btn_t btn, bsp_btn_ev_t ev);
 void demo_low_power_enter(void); void demo_low_power_exit(void);
 void demo_low_power_key(bsp_btn_t btn, bsp_btn_ev_t ev);
 
-bool demo_voice_enter(void);    void demo_voice_exit(void);
+void demo_voice_enter(void);    void demo_voice_exit(void);
 void demo_voice_key(bsp_btn_t btn, bsp_btn_ev_t ev);
 
 void demo_dice_enter(void);     void demo_dice_exit(void);
