@@ -62,7 +62,7 @@ static void icon_refresh(size_t i)
 static void refresh_all(void)
 {
     for (size_t i = 0; i < s_count; i++) icon_refresh(i);
-    if (s_count && s_scr) lv_obj_scroll_to_view(s_icon[s_sel], LV_ANIM_OFF);
+    if (s_count && s_scr) lv_obj_scroll_to_view(s_icon[s_sel], LV_ANIM_ON);
 }
 
 static void tick(lv_timer_t *t)
@@ -114,8 +114,9 @@ void launcher_init(const app_entry_t *apps, size_t count)
 
     size_t rows = (s_count + COLS - 1) / COLS;
     int content_h = 8 + (int)rows * ROW_H;
+    // 撑高对象:让滚动范围覆盖所有图标(LVGL 绝对定位对象不会自动撑高滚动范围)
     s_content = lv_obj_create(s_grid);
-    lv_obj_set_pos(s_content, 0, 0);
+    lv_obj_remove_flag(s_content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(s_content, 240, content_h);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_content, 0, 0);
@@ -127,7 +128,7 @@ void launcher_init(const app_entry_t *apps, size_t count)
         int x = GRID_LEFT + col * (ICON_W + COL_GAP);
         int y = 8 + row * ROW_H;
 
-        s_icon[i] = lv_obj_create(s_content);
+        s_icon[i] = lv_obj_create(s_grid);
         lv_obj_remove_flag(s_icon[i], LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_pos(s_icon[i], x, y);
         lv_obj_set_size(s_icon[i], ICON_W, ICON_H);
