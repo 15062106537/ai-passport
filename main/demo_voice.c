@@ -209,15 +209,11 @@ static void voice_task(void *arg) {
 }
 
 // ---------- app 接口 ----------
-bool demo_voice_enter(void) {
+void demo_voice_enter(void) {
     s_rec_cap = (size_t)CONFIG_VOICE_RECORD_SEC * SAMPLE_RATE;
     s_rec = malloc(s_rec_cap * sizeof(int16_t));
-    if (!s_rec) {
-        ESP_LOGE(TAG, "录音缓冲分配失败(%u 字节),内存不足",
-                 (unsigned)(s_rec_cap * sizeof(int16_t)));
-        return false;
-    }
 
+    // 先创建屏幕，即使内存不足也能显示错误并可长按返回
     s_scr = ui_pixel_screen_create("VOICE AI");
     lv_obj_t *panel = ui_pixel_panel_create(s_scr, 12, 54, 216, 150, UI_PAPER);
     s_status = lv_label_create(panel);
@@ -230,11 +226,19 @@ bool demo_voice_enter(void) {
     lv_obj_center(s_status);
     s_mascot = ui_pixel_mascot_create(s_scr, 101, 238);
 
+    if (!s_rec) {
+        ESP_LOGE(TAG, "录音缓冲分配失败(%u 字节),内存不足",
+                 (unsigned)(s_rec_cap * sizeof(int16_t)));
+        lv_label_set_text(s_status, "MEM FULL\n\nlong OK: back");
+        s_state = VS_ERROR;
+        lv_screen_load(s_scr);
+        return;   // 不启动语音任务
+    }
+
     s_state = VS_CONNECTING;
     s_evq = xQueueCreate(8, sizeof(voice_ev_t));
     if (!s_task) xTaskCreate(voice_task, "demo_voice", 8192, NULL, 4, &s_task);
     lv_screen_load(s_scr);
-    return true;
 }
 
 void demo_voice_exit(void) {
