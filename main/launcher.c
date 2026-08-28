@@ -62,7 +62,7 @@ static void icon_refresh(size_t i)
 static void refresh_all(void)
 {
     for (size_t i = 0; i < s_count; i++) icon_refresh(i);
-    if (s_count) lv_obj_scroll_to_view(s_icon[s_sel], LV_ANIM_ON);
+    if (s_count && s_scr) lv_obj_scroll_to_view(s_icon[s_sel], LV_ANIM_OFF);
 }
 
 static void tick(lv_timer_t *t)
@@ -160,6 +160,18 @@ void launcher_show(void)
 {
     refresh_all();
     lv_screen_load(s_scr);
+}
+
+void launcher_deinit(void)
+{
+    if (s_timer) { lv_timer_delete(s_timer); s_timer = NULL; }
+    if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
+    for (int i = 0; i < MAX_APPS; i++) {
+        s_icon[i] = NULL; s_glyph[i] = NULL; s_name[i] = NULL;
+    }
+    s_grid = NULL; s_content = NULL; s_batt = NULL;
+    s_count = 0; s_apps = NULL;
+    s_sel = 0;
 }
 
 bool launcher_key(bsp_btn_t btn, bsp_btn_ev_t ev)
