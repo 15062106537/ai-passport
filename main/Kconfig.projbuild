@@ -5,7 +5,7 @@ menu "AI Voice Assistant (demo_voice)"
 
     config VOICE_WIFI_SSID
         string "Wi-Fi SSID (AP 名称, 2.4GHz)"
-        default "Mate 70 pro"
+        default "Mate 70 Pro"
 
     config VOICE_WIFI_PASSWORD
         string "Wi-Fi password"
