@@ -52,6 +52,8 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
     case LV_HOME:
         if (btn == BSP_BTN_OK && ev == BSP_BTN_CLICK) {
             if (home_get_selected() == HOME_APPS) {
+                launcher_init(APPS, APP_COUNT);
+                for (size_t i = 0; i < APP_COUNT; i++) launcher_set_available(i, s_ok[i]);
                 s_level = LV_APPS;
                 launcher_show();
             } else {
@@ -65,6 +67,7 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
 
     case LV_APPS:
         if (btn == BSP_BTN_OK && ev == BSP_BTN_LONG) {
+            launcher_deinit();
             s_level = LV_HOME;
             home_show();
         } else if (btn == BSP_BTN_OK && ev == BSP_BTN_CLICK) {
@@ -124,8 +127,6 @@ void app_main(void)
     s_ok[2] = (bsp_audio_init() == ESP_OK);               // Audio
     s_ok[3] = (bsp_battery_init() == ESP_OK);             // Battery
 
-    launcher_init(APPS, APP_COUNT);
-    for (size_t i = 0; i < APP_COUNT; i++) launcher_set_available(i, s_ok[i]);
     home_init();
 
     s_level = LV_HOME;
