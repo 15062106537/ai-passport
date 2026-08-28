@@ -27,6 +27,9 @@ void launcher_set_available(size_t index, bool avail);
 // 加载并显示桌面(返回首页时调用)。
 void launcher_show(void);
 
+// 销毁桌面(返回首页时调用,释放内存)。
+void launcher_deinit(void);
+
 // 桌面按键处理(UP/DOWN 移动焦点)。返回 true 表示已消费该按键。
 bool launcher_key(bsp_btn_t btn, bsp_btn_ev_t ev);
 
