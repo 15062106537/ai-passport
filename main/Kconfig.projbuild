@@ -1,0 +1,33 @@
+# main/Kconfig.projbuild
+# AI 语音助手(demo_voice)的运行参数。
+# 在 `idf.py menuconfig` -> "AI Voice Assistant (demo_voice)" 里填写真实值。
+menu "AI Voice Assistant (demo_voice)"
+
+    config VOICE_WIFI_SSID
+        string "Wi-Fi SSID (AP 名称, 2.4GHz)"
+        default "FoloToy-AP"
+
+    config VOICE_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config VOICE_SERVER_URL
+        string "Jarvis brain /speak URL"
+        default "http://192.168.1.100:8000/speak"
+        help
+            jarvis-brain 服务地址。运行 `python server.py` 后，
+            填成 http://<服务器IP>:8000/speak(注意末尾是 /speak)。
+
+    config VOICE_SN
+        string "Device SN (设备标识, 用于区分记忆)"
+        default "AIPASS0001"
+
+    config VOICE_RECORD_SEC
+        int "Max record seconds"
+        range 1 8
+        default 3
+        help
+            ESP32-C3 无 PSRAM，录音缓冲直接吃内部 RAM(1 秒≈32KB)。
+            上限 8 秒≈256KB，请按实际剩余堆调小。
+
+endmenu
