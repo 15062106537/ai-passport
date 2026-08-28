@@ -57,7 +57,8 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
                 s_level = LV_APPS;
                 launcher_show();
             } else {
-                if (demo_voice_enter()) s_level = LV_VOICE;
+                s_level = LV_VOICE;
+                demo_voice_enter();
             }
         } else {
             home_key(btn, ev);
