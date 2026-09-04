@@ -4,7 +4,8 @@
 // 线程规则: 录音(bsp_audio_read)、网络、HTTP 都是阻塞操作,全在独立任务里做,
 // 按键回调只发事件; 跨线程访问 LVGL 一律 bsp_lvgl_lock()/unlock()。
 #include "demo.h"
-#include "demo_radio.h"
+#include "home.h"
+#include "wifi_keep.h"
 #include "bsp_audio.h"
 #include "bsp_display.h"
 #include "ui_pixel.h"
@@ -16,19 +17,22 @@
 #include "freertos/semphr.h"
 
 #include "esp_log.h"
-#include "esp_event.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
 #include "esp_http_client.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 static const char *TAG = "demo_voice";
 
-#define SAMPLE_RATE   16000
-#define RECORD_CHUNK  512
-#define HTTP_BUF      2048
+#define REC_RATE     8000    // 录音 8kHz:内存减半,whisper 可正常识别
+#define PLAY_RATE    16000   // 播放 16kHz:后端 TTS 返回 16kHz PCM
+#define RECORD_CHUNK 512
+#define HTTP_BUF     2048
+
+// 身份卡 → 贾维斯人格(下标同 home_card_t 的前三张卡)
+static const char *IDENTITY_TAG[]  = { "STUDENT", "DEV", "EVENT" };
+static const char *IDENTITY_HTTP[] = { "student", "dev", "event" };
 
 typedef enum { VOICE_EV_OK_DOWN = 1, VOICE_EV_OK_UP } voice_ev_t;
 typedef enum { VS_CONNECTING, VS_READY, VS_RECORDING, VS_SENDING, VS_ERROR } voice_state_t;
@@ -38,11 +42,10 @@ static volatile voice_state_t s_state;
 
 static int16_t *s_rec;
 static size_t   s_rec_cap, s_rec_len;
+static int      s_rec_sec;          // 实际可录秒数(RAM 不足时自动缩短)
+static int      s_id;               // 身份卡下标:0学生 1开发者 2活动
+static int      s_rec_left_shown;   // 录音倒计时上次显示值
 
-static esp_netif_t *s_sta;
-static bool s_wifi_started;
-static esp_event_handler_instance_t s_wifi_h, s_ip_h;
-static SemaphoreHandle_t s_ip_got;
 static QueueHandle_t s_evq;
 static TaskHandle_t s_task;
 
@@ -53,9 +56,17 @@ static void status_text(const char *t) {
     bsp_lvgl_unlock();
 }
 
-// 打包 44 字节标准 WAV 头(16kHz/16bit/单声道 PCM)
+// 待机提示:身份 + 用法 + 实际可录秒数
+static void show_ready(void) {
+    char t[64];
+    snprintf(t, sizeof(t), "[%s]\nhold OK to talk\nmax %d s",
+             IDENTITY_TAG[s_id], s_rec_sec);
+    status_text(t);
+}
+
+// 打包 44 字节标准 WAV 头(8kHz/16bit/单声道 PCM)
 static void wav_header(uint8_t *h, uint32_t data_len) {
-    uint32_t byte_rate = SAMPLE_RATE * 1 * 2;
+    uint32_t byte_rate = REC_RATE * 1 * 2;
     memcpy(h + 0,  "RIFF", 4);
     uint32_t riff = 36 + data_len;  memcpy(h + 4, &riff, 4);
     memcpy(h + 8,  "WAVE", 4);
@@ -63,7 +74,7 @@ static void wav_header(uint8_t *h, uint32_t data_len) {
     uint32_t fmt_len = 16;          memcpy(h + 16, &fmt_len, 4);
     uint16_t fmt = 1;               memcpy(h + 20, &fmt, 2);
     uint16_t ch = 1;                memcpy(h + 22, &ch, 2);
-    uint32_t rate = SAMPLE_RATE;    memcpy(h + 24, &rate, 4);
+    uint32_t rate = REC_RATE;       memcpy(h + 24, &rate, 4);
     memcpy(h + 28, &byte_rate, 4);
     uint16_t block = 2;             memcpy(h + 32, &block, 2);
     uint16_t bits = 16;             memcpy(h + 34, &bits, 2);
@@ -83,6 +94,7 @@ static esp_err_t upload_and_play(const uint8_t *wav, size_t wav_len) {
 
     esp_http_client_set_header(client, "Content-Type", "audio/wav");
     esp_http_client_set_header(client, "X-SN", CONFIG_VOICE_SN);
+    esp_http_client_set_header(client, "X-IDENTITY", IDENTITY_HTTP[s_id]);
     esp_http_client_set_post_field(client, (const char *)wav, (int)wav_len);
 
     esp_err_t err = esp_http_client_perform(client);
@@ -97,7 +109,7 @@ static esp_err_t upload_and_play(const uint8_t *wav, size_t wav_len) {
         return ESP_FAIL;
     }
 
-    bsp_audio_set_format(SAMPLE_RATE, 16, 1);
+    bsp_audio_set_format(PLAY_RATE, 16, 1);
     bsp_audio_set_volume(80);
     uint8_t buf[HTTP_BUF];
     int len;
@@ -108,57 +120,15 @@ static esp_err_t upload_and_play(const uint8_t *wav, size_t wav_len) {
     return ESP_OK;
 }
 
-// ---------- Wi-Fi ----------
-static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
-    (void)arg;
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        esp_wifi_connect();
-    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *evt = data;
-        ESP_LOGI(TAG, "Got IP " IPSTR, IP2STR(&evt->ip_info.ip));
-        if (s_ip_got) xSemaphoreGive(s_ip_got);
-    }
-}
-
-static esp_err_t wifi_connect(void) {
-    esp_err_t err = demo_radio_nvs_prepare();
-    if (err != ESP_OK) return err;
-    err = demo_radio_network_prepare();
-    if (err != ESP_OK) return err;
-
-    s_ip_got = xSemaphoreCreateBinary();
-    s_sta = esp_netif_create_default_wifi_sta();
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    err = esp_wifi_init(&cfg);
-    if (err != ESP_OK) return err;
-    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL, &s_wifi_h);
-    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL, &s_ip_h);
-    esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    esp_wifi_set_mode(WIFI_MODE_STA);
-
-    wifi_config_t wc = { 0 };
-    strncpy((char *)wc.sta.ssid, CONFIG_VOICE_WIFI_SSID, sizeof(wc.sta.ssid) - 1);
-    if (strlen(CONFIG_VOICE_WIFI_PASSWORD) > 0)
-        strncpy((char *)wc.sta.password, CONFIG_VOICE_WIFI_PASSWORD, sizeof(wc.sta.password) - 1);
-    err = esp_wifi_set_config(WIFI_IF_STA, &wc);
-    if (err != ESP_OK) return err;
-    err = esp_wifi_start();
-    if (err != ESP_OK) return err;
-    s_wifi_started = true;
-    esp_wifi_connect();
-
-    if (xSemaphoreTake(s_ip_got, pdMS_TO_TICKS(15000)) != pdTRUE) return ESP_ERR_TIMEOUT;
-    return ESP_OK;
-}
-
 // ---------- 录音与发送 ----------
 static void begin_record(void) {
-    if (bsp_audio_set_format(SAMPLE_RATE, 16, 1) != ESP_OK) {
+    if (bsp_audio_set_format(REC_RATE, 16, 1) != ESP_OK) {
         status_text("audio fail"); s_state = VS_ERROR; return;
     }
     s_rec_len = 0;
+    s_rec_left_shown = -1;
     s_state = VS_RECORDING;
-    status_text("REC...");
+    status_text("REC... release to send");
 }
 
 static void stop_and_send(void) {
@@ -171,7 +141,7 @@ static void stop_and_send(void) {
     memcpy(wav + 44, s_rec, pcm_bytes);
 
     if (upload_and_play(wav, 44 + pcm_bytes) == ESP_OK) {
-        status_text("READY. hold OK = talk");
+        show_ready();
     } else {
         status_text("server fail");
     }
@@ -182,11 +152,14 @@ static void stop_and_send(void) {
 static void voice_task(void *arg) {
     (void)arg;
     status_text("Wi-Fi...");
-    if (wifi_connect() != ESP_OK) {
-        status_text("wifi fail"); vTaskDelete(NULL); return;
+    if (wifi_keep_wait_ip(15000) != ESP_OK) {
+        status_text("wifi fail");
+        s_task = NULL;          // 句柄清零,下次 enter 才能重建任务
+        vTaskDelete(NULL);
+        return;
     }
     s_state = VS_READY;
-    status_text("READY. hold OK = talk");
+    show_ready();
 
     int16_t tmp[RECORD_CHUNK];
     for (;;) {
@@ -200,6 +173,14 @@ static void voice_task(void *arg) {
                 if (bsp_audio_read(tmp, RECORD_CHUNK * sizeof(int16_t)) == ESP_OK) {
                     memcpy(s_rec + s_rec_len, tmp, RECORD_CHUNK * sizeof(int16_t));
                     s_rec_len += RECORD_CHUNK;
+                    // 每秒刷新倒计时
+                    int left = s_rec_sec - (int)(s_rec_len / REC_RATE);
+                    if (left != s_rec_left_shown) {
+                        s_rec_left_shown = left;
+                        char t[32];
+                        snprintf(t, sizeof(t), "REC... %d s left", left);
+                        status_text(t);
+                    }
                 }
             } else {
                 stop_and_send();   // 录满自动发送
@@ -210,8 +191,20 @@ static void voice_task(void *arg) {
 
 // ---------- app 接口 ----------
 void demo_voice_enter(void) {
-    s_rec_cap = (size_t)CONFIG_VOICE_RECORD_SEC * SAMPLE_RATE;
-    s_rec = malloc(s_rec_cap * sizeof(int16_t));
+    // 身份:取最后浏览的身份卡(学生/开发者/活动)
+    home_card_t id = home_get_identity();
+    s_id = (id == HOME_CARD_DEV) ? 1 : (id == HOME_CARD_EVENT) ? 2 : 0;
+
+    // 录音缓冲:按配置秒数申请,RAM 不足自动减半(8kHz 下 1 秒≈16KB)
+    int want = CONFIG_VOICE_RECORD_SEC;
+    s_rec = NULL;
+    while (want >= 1 && !s_rec) {
+        s_rec_cap = (size_t)want * REC_RATE;
+        s_rec = malloc(s_rec_cap * sizeof(int16_t));
+        if (!s_rec) want /= 2;
+    }
+    s_rec_sec = want;
+    ESP_LOGI(TAG, "录音 %d 秒(8kHz),身份 %s", s_rec_sec, IDENTITY_HTTP[s_id]);
 
     // 先创建屏幕，即使内存不足也能显示错误并可长按返回
     s_scr = ui_pixel_screen_create("VOICE AI");
@@ -244,11 +237,7 @@ void demo_voice_enter(void) {
 void demo_voice_exit(void) {
     if (s_task) { vTaskDelete(s_task); s_task = NULL; }
     if (s_evq) { vQueueDelete(s_evq); s_evq = NULL; }
-    if (s_wifi_h) { esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, s_wifi_h); s_wifi_h = NULL; }
-    if (s_ip_h)   { esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, s_ip_h); s_ip_h = NULL; }
-    if (s_wifi_started) { esp_wifi_stop(); esp_wifi_deinit(); s_wifi_started = false; }
-    if (s_sta) { esp_netif_destroy_default_wifi(s_sta); s_sta = NULL; }
-    if (s_ip_got) { vSemaphoreDelete(s_ip_got); s_ip_got = NULL; }
+    // Wi-Fi 常驻:不拆网络,只回收本页资源
     if (s_rec) { free(s_rec); s_rec = NULL; }
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; s_status = s_mascot = NULL; }
 }
