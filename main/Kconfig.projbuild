@@ -24,10 +24,11 @@ menu "AI Voice Assistant (demo_voice)"
 
     config VOICE_RECORD_SEC
         int "Max record seconds"
-        range 1 8
-        default 1
+        range 1 12
+        default 6
         help
-            ESP32-C3 无 PSRAM，录音缓冲直接吃内部 RAM(1 秒≈32KB)。
-            默认 1 秒(32KB)，录满会自动发送。
+            录音采用 8kHz 采样,1 秒约占 16KB 内部 RAM(ESP32-C3 无 PSRAM)。
+            默认 6 秒;RAM 不足时固件自动减半直到装得下,
+            屏幕待机时会显示实际可录秒数,录满自动发送。
 
 endmenu
