@@ -67,7 +67,7 @@ esp_err_t wifi_keep_start(void)
     if (err != ESP_OK) return err;
 
     esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL, &s_wifi_h);
-    esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_STA_GOT_IP, on_event, NULL, &s_ip_h);
+    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL, &s_ip_h);
 
     esp_wifi_set_storage(WIFI_STORAGE_RAM);
     esp_wifi_set_mode(WIFI_MODE_STA);
