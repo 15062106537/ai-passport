@@ -1,7 +1,7 @@
-// main/main.c —— 三级导航:首页(身份卡) → Apps集合/语音助手 → 具体应用。
+// main/main.c —— 三级导航:首页(身份识别卡卡包) → Apps集合/语音助手 → 具体应用。
 //
 // 按键语义:
-//   首页: 上/下 切换两个大入口; 确定 进入
+//   首页: 上/下 翻身份卡; 确定 在功能卡(APPS/VOICE)上进入对应功能
 //   Apps集合: 上/下 移动图标; 确定 进入应用; 长按确定 返回首页
 //   具体应用: 长按确定 返回 Apps集合
 //   语音助手: 长按确定 返回首页
@@ -50,18 +50,17 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
 
     switch (s_level) {
     case LV_HOME:
-        if (btn == BSP_BTN_OK && ev == BSP_BTN_CLICK) {
-            if (home_get_selected() == HOME_APPS) {
+        if (!home_key(btn, ev) && btn == BSP_BTN_OK && ev == BSP_BTN_CLICK) {
+            // home_key 不消费 OK = 当前是功能卡
+            if (home_get_selected() == HOME_CARD_APPS) {
                 launcher_init(APPS, APP_COUNT);
                 for (size_t i = 0; i < APP_COUNT; i++) launcher_set_available(i, s_ok[i]);
                 s_level = LV_APPS;
                 launcher_show();
-            } else {
+            } else if (home_get_selected() == HOME_CARD_VOICE) {
                 s_level = LV_VOICE;
                 demo_voice_enter();
             }
-        } else {
-            home_key(btn, ev);
         }
         break;
 
