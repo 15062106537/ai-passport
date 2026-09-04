@@ -7,6 +7,7 @@ idf_component_register(
          "demo_audio.c"
          "demo_battery.c"
          "demo_radio.c"
+         "wifi_keep.c"
          "demo_wifi.c"
          "demo_ble.c"
          "demo_low_power.c"
